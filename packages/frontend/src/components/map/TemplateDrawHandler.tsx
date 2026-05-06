@@ -10,19 +10,22 @@ import { useMissionStore } from "@/store/missionStore";
 import { TemplateConfigPanel } from "./TemplateConfigPanel";
 import { TemplatePreview } from "./TemplatePreview";
 import type {
-  TemplateType,
   OrbitParams,
   GridParams,
+  PhotogrammetryParams,
   FacadeParams,
   TemplateResult,
 } from "@/lib/templates";
 import {
   generateOrbit,
   generateGrid,
+  generatePhotogrammetry,
   generateFacade,
   DEFAULT_ORBIT_PARAMS,
   DEFAULT_GRID_PARAMS,
+  DEFAULT_PHOTOGRAMMETRY_PARAMS,
   DEFAULT_FACADE_PARAMS,
+  getCameraDefaultsForPayload,
 } from "@/lib/templates";
 
 /** Haversine distance in meters (local copy to avoid circular imports) */
@@ -51,6 +54,7 @@ export function TemplateDrawHandler() {
   const templateMode = useMissionStore((s) => s.templateMode);
   const setTemplateMode = useMissionStore((s) => s.setTemplateMode);
   const appendWaypoints = useMissionStore((s) => s.appendWaypoints);
+  const payloadEnumValue = useMissionStore((s) => s.config.payloadEnumValue);
 
   const [dragging, setDragging] = useState(false);
   const [dragState, setDragState] = useState<DragState | null>(null);
@@ -59,6 +63,8 @@ export function TemplateDrawHandler() {
   // Editable params (populated after drag completes)
   const [orbitParams, setOrbitParams] = useState<OrbitParams | null>(null);
   const [gridParams, setGridParams] = useState<GridParams | null>(null);
+  const [photogrammetryParams, setPhotogrammetryParams] =
+    useState<PhotogrammetryParams | null>(null);
   const [facadeParams, setFacadeParams] = useState<FacadeParams | null>(null);
 
   const resetState = useCallback(() => {
@@ -67,6 +73,7 @@ export function TemplateDrawHandler() {
     setConfirmed(false);
     setOrbitParams(null);
     setGridParams(null);
+    setPhotogrammetryParams(null);
     setFacadeParams(null);
   }, []);
 
@@ -123,6 +130,14 @@ export function TemplateDrawHandler() {
       } else if (templateMode === "grid") {
         setGridParams({
           ...DEFAULT_GRID_PARAMS,
+          ...getCameraDefaultsForPayload(payloadEnumValue),
+          corner1: finalDrag.start,
+          corner2: finalDrag.end,
+        });
+      } else if (templateMode === "photogrammetry") {
+        setPhotogrammetryParams({
+          ...DEFAULT_PHOTOGRAMMETRY_PARAMS,
+          ...getCameraDefaultsForPayload(payloadEnumValue),
           corner1: finalDrag.start,
           corner2: finalDrag.end,
         });
@@ -142,9 +157,11 @@ export function TemplateDrawHandler() {
   const preview: TemplateResult | null = useMemo(() => {
     if (orbitParams) return generateOrbit(orbitParams);
     if (gridParams) return generateGrid(gridParams);
+    if (photogrammetryParams)
+      return generatePhotogrammetry(photogrammetryParams);
     if (facadeParams) return generateFacade(facadeParams);
     return null;
-  }, [orbitParams, gridParams, facadeParams]);
+  }, [orbitParams, gridParams, photogrammetryParams, facadeParams]);
 
   // Live preview during drag (before config panel)
   const dragPreview = useMemo(() => {
@@ -167,6 +184,15 @@ export function TemplateDrawHandler() {
     if (templateMode === "grid") {
       return generateGrid({
         ...DEFAULT_GRID_PARAMS,
+        ...getCameraDefaultsForPayload(payloadEnumValue),
+        corner1: dragState.start,
+        corner2: dragState.end,
+      });
+    }
+    if (templateMode === "photogrammetry") {
+      return generatePhotogrammetry({
+        ...DEFAULT_PHOTOGRAMMETRY_PARAMS,
+        ...getCameraDefaultsForPayload(payloadEnumValue),
         corner1: dragState.start,
         corner2: dragState.end,
       });
@@ -179,7 +205,7 @@ export function TemplateDrawHandler() {
       });
     }
     return null;
-  }, [dragging, dragState, templateMode]);
+  }, [dragging, dragState, templateMode, payloadEnumValue]);
 
   if (!templateMode || templateMode === "pencil") return null;
 
@@ -229,18 +255,20 @@ export function TemplateDrawHandler() {
           />
         </>
       )}
-      {dragging && dragState && templateMode === "grid" && (
-        <Rectangle
-          bounds={[dragState.start, dragState.end]}
-          pathOptions={{
-            color: "#a78bfa",
-            weight: 2,
-            opacity: 0.5,
-            fillOpacity: 0.05,
-            dashArray: "6, 4",
-          }}
-        />
-      )}
+      {dragging &&
+        dragState &&
+        (templateMode === "grid" || templateMode === "photogrammetry") && (
+          <Rectangle
+            bounds={[dragState.start, dragState.end]}
+            pathOptions={{
+              color: "#a78bfa",
+              weight: 2,
+              opacity: 0.5,
+              fillOpacity: 0.05,
+              dashArray: "6, 4",
+            }}
+          />
+        )}
       {dragging && dragState && templateMode === "facade" && (
         <>
           <Polyline
@@ -277,9 +305,11 @@ export function TemplateDrawHandler() {
           type={templateMode}
           orbitParams={orbitParams}
           gridParams={gridParams}
+          photogrammetryParams={photogrammetryParams}
           facadeParams={facadeParams}
           onOrbitChange={setOrbitParams}
           onGridChange={setGridParams}
+          onPhotogrammetryChange={setPhotogrammetryParams}
           onFacadeChange={setFacadeParams}
           onApply={handleApply}
           onCancel={handleCancel}

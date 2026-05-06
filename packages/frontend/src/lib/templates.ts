@@ -7,6 +7,10 @@ import { DEFAULT_WAYPOINT } from "@droneroute/shared";
 
 // ── Helpers ──────────────────────────────────────────────
 
+const EARTH_RADIUS_M = 6371000;
+const MIN_SURVEY_SPACING_M = 3;
+const MAX_OVERLAP_PCT = 95;
+
 /** Move a lat/lng point by a distance (meters) and bearing (degrees, 0=N) */
 function destinationPoint(
   lat: number,
@@ -14,13 +18,12 @@ function destinationPoint(
   distanceM: number,
   bearingDeg: number,
 ): [number, number] {
-  const R = 6371000;
   const toRad = (d: number) => (d * Math.PI) / 180;
   const toDeg = (r: number) => (r * 180) / Math.PI;
   const lat1 = toRad(lat);
   const lng1 = toRad(lng);
   const brng = toRad(bearingDeg);
-  const d = distanceM / R;
+  const d = distanceM / EARTH_RADIUS_M;
 
   const lat2 = Math.asin(
     Math.sin(lat1) * Math.cos(d) +
@@ -60,19 +63,191 @@ function haversine(
   lat2: number,
   lng2: number,
 ): number {
-  const R = 6371000;
   const toRad = (d: number) => (d * Math.PI) / 180;
   const dLat = toRad(lat2 - lat1);
   const dLng = toRad(lng2 - lng1);
   const a =
     Math.sin(dLat / 2) ** 2 +
     Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return EARTH_RADIUS_M * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
+
+function round1(value: number): number {
+  return Math.round(value * 10) / 10;
+}
+
+function diagonalFovToHorizontalVertical(
+  diagonalFovDeg: number,
+  aspectWidth = 4,
+  aspectHeight = 3,
+): { horizontalFovDeg: number; verticalFovDeg: number } {
+  const diagonalTan = Math.tan((diagonalFovDeg * Math.PI) / 360);
+  const diagonal = Math.sqrt(aspectWidth ** 2 + aspectHeight ** 2);
+  const horizontalTan = diagonalTan * (aspectWidth / diagonal);
+  const verticalTan = diagonalTan * (aspectHeight / diagonal);
+
+  return {
+    horizontalFovDeg: round1((Math.atan(horizontalTan) * 360) / Math.PI),
+    verticalFovDeg: round1((Math.atan(verticalTan) * 360) / Math.PI),
+  };
+}
+
+// ── Camera and Overlap Presets ───────────────────────────
+
+export type SurveySpacingMode = "fov" | "manual";
+export type SurveyOverlapPreset =
+  | "fastest"
+  | "default"
+  | "highQuality"
+  | "custom";
+
+export interface CameraProfile {
+  id: string;
+  label: string;
+  horizontalFovDeg: number;
+  verticalFovDeg: number;
+  payloadEnumValues?: number[];
+  source: string;
+}
+
+export const OVERLAP_PRESETS: Record<
+  Exclude<SurveyOverlapPreset, "custom">,
+  { label: string; forwardOverlapPct: number; sideOverlapPct: number }
+> = {
+  fastest: {
+    label: "Fastest",
+    forwardOverlapPct: 70,
+    sideOverlapPct: 60,
+  },
+  default: {
+    label: "Default",
+    forwardOverlapPct: 80,
+    sideOverlapPct: 70,
+  },
+  highQuality: {
+    label: "High quality",
+    forwardOverlapPct: 85,
+    sideOverlapPct: 80,
+  },
+};
+
+const fov84 = diagonalFovToHorizontalVertical(84);
+const fov821 = diagonalFovToHorizontalVertical(82.1);
+const fov82 = diagonalFovToHorizontalVertical(82);
+
+export const CAMERA_PROFILES: CameraProfile[] = [
+  {
+    id: "custom-84",
+    label: "Custom / Generic 84° DFOV",
+    ...fov84,
+    source: "Generic 4:3 84° diagonal field of view",
+  },
+  {
+    id: "mavic-3e-wide",
+    label: "DJI Mavic 3E Wide",
+    payloadEnumValues: [66],
+    ...fov84,
+    source: "DJI Mavic 3 Enterprise wide camera FOV 84°",
+  },
+  {
+    id: "mavic-3t-wide",
+    label: "DJI Mavic 3T Wide",
+    payloadEnumValues: [67],
+    ...fov84,
+    source: "DJI Mavic 3 Enterprise wide camera FOV 84°",
+  },
+  {
+    id: "mavic-3m-rgb",
+    label: "DJI Mavic 3M RGB",
+    payloadEnumValues: [68],
+    ...fov84,
+    source: "DJI Mavic 3M RGB camera FOV 84°",
+  },
+  {
+    id: "mavic-3m-ms",
+    label: "DJI Mavic 3M Multispectral",
+    horizontalFovDeg: 61.2,
+    verticalFovDeg: 48.1,
+    source: "DJI Mavic 3M multispectral FOV 61.2° x 48.10°",
+  },
+  {
+    id: "m30-wide",
+    label: "DJI M30/M30T Wide",
+    payloadEnumValues: [52, 53],
+    ...fov84,
+    source: "DJI Matrice 30 wide camera DFOV 84°",
+  },
+  {
+    id: "h30-wide",
+    label: "DJI Zenmuse H30/H30T Wide",
+    payloadEnumValues: [82, 83],
+    ...fov821,
+    source: "DJI Zenmuse H30 wide-angle camera DFOV 82.1°",
+  },
+  {
+    id: "matrice-3d-wide",
+    label: "DJI Matrice 3D Wide",
+    payloadEnumValues: [80],
+    ...fov84,
+    source: "DJI Dock 2 Matrice 3D wide-angle camera FOV 84°",
+  },
+  {
+    id: "matrice-3td-wide",
+    label: "DJI Matrice 3TD Wide",
+    payloadEnumValues: [81],
+    ...fov82,
+    source: "DJI Dock 2 Matrice 3TD wide-angle camera FOV 82°",
+  },
+  {
+    id: "mini-4-pro",
+    label: "DJI Mini 4 Pro",
+    payloadEnumValues: [100],
+    ...fov821,
+    source: "DJI Mini 4 Pro camera FOV 82.1°",
+  },
+];
+
+export function getCameraProfileById(id: string): CameraProfile {
+  return (
+    CAMERA_PROFILES.find((profile) => profile.id === id) || CAMERA_PROFILES[0]
+  );
+}
+
+export function getDefaultCameraProfileForPayload(
+  payloadEnumValue?: number,
+): CameraProfile {
+  return (
+    CAMERA_PROFILES.find((profile) =>
+      profile.payloadEnumValues?.includes(payloadEnumValue ?? -1),
+    ) || CAMERA_PROFILES[0]
+  );
+}
+
+export function getCameraDefaultsForPayload(payloadEnumValue?: number): {
+  cameraProfileId: string;
+  horizontalFovDeg: number;
+  verticalFovDeg: number;
+} {
+  const profile = getDefaultCameraProfileForPayload(payloadEnumValue);
+  return {
+    cameraProfileId: profile.id,
+    horizontalFovDeg: profile.horizontalFovDeg,
+    verticalFovDeg: profile.verticalFovDeg,
+  };
 }
 
 // ── Template Types ───────────────────────────────────────
 
-export type TemplateType = "orbit" | "grid" | "facade" | "pencil";
+export type TemplateType =
+  | "orbit"
+  | "grid"
+  | "photogrammetry"
+  | "facade"
+  | "pencil";
 
 export interface OrbitParams {
   center: [number, number]; // [lat, lng]
@@ -83,14 +258,34 @@ export interface OrbitParams {
   createPoi: boolean;
 }
 
-export interface GridParams {
+export interface SurveyCameraParams {
+  spacingMode: SurveySpacingMode;
+  cameraProfileId: string;
+  horizontalFovDeg: number;
+  verticalFovDeg: number;
+  overlapPreset: SurveyOverlapPreset;
+  forwardOverlapPct: number;
+  sideOverlapPct: number;
+  spacingM: number; // manual line spacing
+  photoSpacingM: number; // manual along-track photo spacing
+}
+
+export interface GridParams extends SurveyCameraParams {
   corner1: [number, number]; // [lat, lng]
   corner2: [number, number]; // [lat, lng]
   altitude: number;
-  spacingM: number;
   addPhotos: boolean;
-  rotationDeg: number; // rotation of the grid in degrees (0-360)
+  rotationDeg: number; // rotation of the grid in degrees (-180..180)
   reverse: boolean; // fly the grid in reverse order
+}
+
+export interface PhotogrammetryParams extends SurveyCameraParams {
+  corner1: [number, number]; // [lat, lng]
+  corner2: [number, number]; // [lat, lng]
+  baseAltitude: number;
+  addPhotos: boolean;
+  rotationDeg: number; // base rotation of the pattern in degrees (-180..180)
+  reverse: boolean; // fly each generated layer in reverse order
 }
 
 export interface FacadeParams {
@@ -117,6 +312,7 @@ export interface PencilParams {
 export type TemplateParams =
   | OrbitParams
   | GridParams
+  | PhotogrammetryParams
   | FacadeParams
   | PencilParams;
 
@@ -125,7 +321,18 @@ export interface TemplateResult {
   pois: Omit<PointOfInterest, "id">[];
 }
 
+export interface SurveySpacingResult {
+  lineSpacingM: number;
+  photoSpacingM: number;
+  footprintWidthM: number;
+  footprintLengthM: number;
+  forwardOverlapPct: number;
+  sideOverlapPct: number;
+}
+
 // ── Default Params ───────────────────────────────────────
+
+const defaultCamera = getCameraDefaultsForPayload();
 
 export const DEFAULT_ORBIT_PARAMS: Omit<OrbitParams, "center" | "radiusM"> = {
   altitude: 30,
@@ -136,7 +343,30 @@ export const DEFAULT_ORBIT_PARAMS: Omit<OrbitParams, "center" | "radiusM"> = {
 
 export const DEFAULT_GRID_PARAMS: Omit<GridParams, "corner1" | "corner2"> = {
   altitude: 80,
+  spacingMode: "fov",
+  ...defaultCamera,
+  overlapPreset: "default",
+  forwardOverlapPct: OVERLAP_PRESETS.default.forwardOverlapPct,
+  sideOverlapPct: OVERLAP_PRESETS.default.sideOverlapPct,
   spacingM: 30,
+  photoSpacingM: 20,
+  addPhotos: true,
+  rotationDeg: 0,
+  reverse: false,
+};
+
+export const DEFAULT_PHOTOGRAMMETRY_PARAMS: Omit<
+  PhotogrammetryParams,
+  "corner1" | "corner2"
+> = {
+  baseAltitude: 80,
+  spacingMode: "fov",
+  ...defaultCamera,
+  overlapPreset: "default",
+  forwardOverlapPct: OVERLAP_PRESETS.default.forwardOverlapPct,
+  sideOverlapPct: OVERLAP_PRESETS.default.sideOverlapPct,
+  spacingM: 30,
+  photoSpacingM: 20,
   addPhotos: true,
   rotationDeg: 0,
   reverse: false,
@@ -158,6 +388,73 @@ export const DEFAULT_PENCIL_PARAMS: Omit<PencilParams, "path"> = {
   gimbalPitchAngle: -45,
   reverse: false,
 };
+
+// ── Survey Spacing ───────────────────────────────────────
+
+function normalizedOverlap(params: SurveyCameraParams): {
+  forwardOverlapPct: number;
+  sideOverlapPct: number;
+} {
+  if (params.overlapPreset !== "custom") {
+    const preset = OVERLAP_PRESETS[params.overlapPreset];
+    return {
+      forwardOverlapPct: preset.forwardOverlapPct,
+      sideOverlapPct: preset.sideOverlapPct,
+    };
+  }
+
+  return {
+    forwardOverlapPct: clamp(params.forwardOverlapPct, 0, MAX_OVERLAP_PCT),
+    sideOverlapPct: clamp(params.sideOverlapPct, 0, MAX_OVERLAP_PCT),
+  };
+}
+
+export function calculateSurveySpacing(
+  params: SurveyCameraParams,
+  altitude: number,
+): SurveySpacingResult {
+  const { forwardOverlapPct, sideOverlapPct } = normalizedOverlap(params);
+  const horizontalFovDeg = clamp(
+    params.horizontalFovDeg || fov84.horizontalFovDeg,
+    1,
+    179,
+  );
+  const verticalFovDeg = clamp(
+    params.verticalFovDeg || fov84.verticalFovDeg,
+    1,
+    179,
+  );
+  const footprintWidthM =
+    2 * altitude * Math.tan((horizontalFovDeg * Math.PI) / 360);
+  const footprintLengthM =
+    2 * altitude * Math.tan((verticalFovDeg * Math.PI) / 360);
+
+  if (params.spacingMode === "manual") {
+    return {
+      lineSpacingM: Math.max(MIN_SURVEY_SPACING_M, params.spacingM),
+      photoSpacingM: Math.max(MIN_SURVEY_SPACING_M, params.photoSpacingM),
+      footprintWidthM,
+      footprintLengthM,
+      forwardOverlapPct,
+      sideOverlapPct,
+    };
+  }
+
+  return {
+    lineSpacingM: Math.max(
+      MIN_SURVEY_SPACING_M,
+      footprintWidthM * (1 - sideOverlapPct / 100),
+    ),
+    photoSpacingM: Math.max(
+      MIN_SURVEY_SPACING_M,
+      footprintLengthM * (1 - forwardOverlapPct / 100),
+    ),
+    footprintWidthM,
+    footprintLengthM,
+    forwardOverlapPct,
+    sideOverlapPct,
+  };
+}
 
 // ── Generators ───────────────────────────────────────────
 
@@ -213,126 +510,295 @@ export function generateOrbit(params: OrbitParams): TemplateResult {
   return { waypoints, pois };
 }
 
-export function generateGrid(params: GridParams): TemplateResult {
-  const {
-    corner1,
-    corner2,
-    altitude,
-    spacingM,
-    addPhotos,
-    rotationDeg,
-    reverse,
-  } = params;
-  const [lat1, lng1] = corner1;
-  const [lat2, lng2] = corner2;
+interface LocalPoint {
+  x: number;
+  y: number;
+}
 
-  const waypoints: TemplateResult["waypoints"] = [];
+interface SurveyRectangle {
+  centerLat: number;
+  centerLng: number;
+  minX: number;
+  maxX: number;
+  minY: number;
+  maxY: number;
+  widthM: number;
+  heightM: number;
+  cosCenterLat: number;
+}
 
-  // Determine bounding box
-  const minLat = Math.min(lat1, lat2);
-  const maxLat = Math.max(lat1, lat2);
-  const minLng = Math.min(lng1, lng2);
-  const maxLng = Math.max(lng1, lng2);
+interface SurveyPatternParams {
+  corner1: [number, number];
+  corner2: [number, number];
+  altitude: number;
+  lineSpacingM: number;
+  photoSpacingM: number;
+  addPhotos: boolean;
+  rotationDeg: number;
+  reverse: boolean;
+  gimbalPitchAngle: number;
+}
 
-  // Center of the bounding box (rotation pivot)
-  const centerLat = (minLat + maxLat) / 2;
-  const centerLng = (minLng + maxLng) / 2;
-
-  // Calculate the width and height of the area in meters
-  const widthM = haversine(minLat, minLng, minLat, maxLng);
-  const heightM = haversine(minLat, minLng, maxLat, minLng);
-
-  // Determine if we fly N-S or E-W (fly along the longer axis)
-  const flyEW = widthM >= heightM;
-
-  // Number of passes
-  const crossAxisDist = flyEW ? heightM : widthM;
-  const numPasses = Math.max(2, Math.ceil(crossAxisDist / spacingM) + 1);
-
-  const takePhotoAction: WaypointAction = {
+function createTakePhotoAction(): WaypointAction {
+  return {
     actionId: 0,
     actionType: "takePhoto",
     params: { payloadPositionIndex: 0 },
   };
+}
 
-  // Rotation helper: rotate a lat/lng point around the center by rotationDeg degrees.
-  // Uses equirectangular approximation (accurate enough for small areas).
-  const rotRad = (rotationDeg * Math.PI) / 180;
-  const cosR = Math.cos(rotRad);
-  const sinR = Math.sin(rotRad);
-  const cosCenter = Math.cos((centerLat * Math.PI) / 180);
+function getSurveyRectangle(
+  corner1: [number, number],
+  corner2: [number, number],
+): SurveyRectangle {
+  const centerLat = (corner1[0] + corner2[0]) / 2;
+  const centerLng = (corner1[1] + corner2[1]) / 2;
+  const cosCenterLat = Math.cos((centerLat * Math.PI) / 180);
 
-  function rotatePoint(lat: number, lng: number): [number, number] {
-    if (rotationDeg === 0) return [lat, lng];
-    // Convert to local offsets in degrees, scaling lng by cos(lat) for equal units
-    const dLat = lat - centerLat;
-    const dLng = (lng - centerLng) * cosCenter;
-    // Rotate
-    const rLat = dLat * cosR - dLng * sinR;
-    const rLng = dLat * sinR + dLng * cosR;
-    // Convert back
-    return [centerLat + rLat, centerLng + rLng / cosCenter];
-  }
+  const toLocal = (point: [number, number]): LocalPoint => ({
+    x: ((point[1] - centerLng) * Math.PI * EARTH_RADIUS_M * cosCenterLat) / 180,
+    y: ((point[0] - centerLat) * Math.PI * EARTH_RADIUS_M) / 180,
+  });
 
-  for (let pass = 0; pass < numPasses; pass++) {
-    const fraction = numPasses <= 1 ? 0 : pass / (numPasses - 1);
-    const reverse = pass % 2 === 1; // lawn-mower pattern: alternate direction
+  const p1 = toLocal(corner1);
+  const p2 = toLocal(corner2);
+  const minX = Math.min(p1.x, p2.x);
+  const maxX = Math.max(p1.x, p2.x);
+  const minY = Math.min(p1.y, p2.y);
+  const maxY = Math.max(p1.y, p2.y);
 
-    let wpLat1: number, wpLng1: number, wpLat2: number, wpLng2: number;
+  return {
+    centerLat,
+    centerLng,
+    minX,
+    maxX,
+    minY,
+    maxY,
+    widthM: maxX - minX,
+    heightM: maxY - minY,
+    cosCenterLat,
+  };
+}
 
-    if (flyEW) {
-      // Cross axis is N-S: each pass is a horizontal E-W line
-      const lat = minLat + fraction * (maxLat - minLat);
-      const startLng = reverse ? maxLng : minLng;
-      const endLng = reverse ? minLng : maxLng;
-      wpLat1 = lat;
-      wpLng1 = startLng;
-      wpLat2 = lat;
-      wpLng2 = endLng;
-    } else {
-      // Cross axis is E-W: each pass is a vertical N-S line
-      const lng = minLng + fraction * (maxLng - minLng);
-      const startLat = reverse ? maxLat : minLat;
-      const endLat = reverse ? minLat : maxLat;
-      wpLat1 = startLat;
-      wpLng1 = lng;
-      wpLat2 = endLat;
-      wpLng2 = lng;
+function fromLocal(rect: SurveyRectangle, point: LocalPoint): [number, number] {
+  return [
+    rect.centerLat + (point.y / EARTH_RADIUS_M) * (180 / Math.PI),
+    rect.centerLng +
+      (point.x / (EARTH_RADIUS_M * rect.cosCenterLat)) * (180 / Math.PI),
+  ];
+}
+
+function clipLineToRect(
+  rect: SurveyRectangle,
+  origin: LocalPoint,
+  direction: LocalPoint,
+): [LocalPoint, LocalPoint] | null {
+  let tMin = -Infinity;
+  let tMax = Infinity;
+  const eps = 1e-9;
+
+  const applyAxis = (
+    coord: number,
+    delta: number,
+    min: number,
+    max: number,
+  ): boolean => {
+    if (Math.abs(delta) < eps) {
+      return coord >= min && coord <= max;
     }
 
-    // Apply rotation
-    const [rLat1, rLng1] = rotatePoint(wpLat1, wpLng1);
-    const [rLat2, rLng2] = rotatePoint(wpLat2, wpLng2);
+    const t1 = (min - coord) / delta;
+    const t2 = (max - coord) / delta;
+    tMin = Math.max(tMin, Math.min(t1, t2));
+    tMax = Math.min(tMax, Math.max(t1, t2));
+    return tMin <= tMax;
+  };
 
-    waypoints.push({
+  if (!applyAxis(origin.x, direction.x, rect.minX, rect.maxX)) return null;
+  if (!applyAxis(origin.y, direction.y, rect.minY, rect.maxY)) return null;
+
+  return [
+    { x: origin.x + direction.x * tMin, y: origin.y + direction.y * tMin },
+    { x: origin.x + direction.x * tMax, y: origin.y + direction.y * tMax },
+  ];
+}
+
+function generateSegmentPoints(
+  start: LocalPoint,
+  end: LocalPoint,
+  spacingM: number,
+): LocalPoint[] {
+  const lengthM = Math.hypot(end.x - start.x, end.y - start.y);
+  if (lengthM < 0.5) return [];
+
+  const count = Math.max(2, Math.ceil(lengthM / spacingM) + 1);
+  const points: LocalPoint[] = [];
+  for (let i = 0; i < count; i++) {
+    const t = count === 1 ? 0 : i / (count - 1);
+    points.push({
+      x: start.x + (end.x - start.x) * t,
+      y: start.y + (end.y - start.y) * t,
+    });
+  }
+  return points;
+}
+
+function generateSurveyPattern(
+  params: SurveyPatternParams,
+): TemplateResult["waypoints"] {
+  const rect = getSurveyRectangle(params.corner1, params.corner2);
+  if (rect.widthM < 0.5 || rect.heightM < 0.5) return [];
+
+  const baseAngleDeg = rect.widthM >= rect.heightM ? 0 : 90;
+  const angleRad = ((baseAngleDeg + params.rotationDeg) * Math.PI) / 180;
+  const direction = { x: Math.cos(angleRad), y: Math.sin(angleRad) };
+  const cross = { x: -direction.y, y: direction.x };
+
+  const corners: LocalPoint[] = [
+    { x: rect.minX, y: rect.minY },
+    { x: rect.maxX, y: rect.minY },
+    { x: rect.maxX, y: rect.maxY },
+    { x: rect.minX, y: rect.maxY },
+  ];
+  const projections = corners.map(
+    (corner) => corner.x * cross.x + corner.y * cross.y,
+  );
+  const minProjection = Math.min(...projections);
+  const maxProjection = Math.max(...projections);
+  const crossRangeM = maxProjection - minProjection;
+  const passCount = Math.max(
+    2,
+    Math.ceil(
+      crossRangeM / Math.max(MIN_SURVEY_SPACING_M, params.lineSpacingM),
+    ) + 1,
+  );
+
+  const localPoints: LocalPoint[] = [];
+  for (let pass = 0; pass < passCount; pass++) {
+    const fraction = passCount <= 1 ? 0 : pass / (passCount - 1);
+    const offset = minProjection + fraction * crossRangeM;
+    const origin = { x: cross.x * offset, y: cross.y * offset };
+    const segment = clipLineToRect(rect, origin, direction);
+    if (!segment) continue;
+
+    const [a, b] = pass % 2 === 1 ? [segment[1], segment[0]] : segment;
+    localPoints.push(...generateSegmentPoints(a, b, params.photoSpacingM));
+  }
+
+  if (params.reverse) {
+    localPoints.reverse();
+  }
+
+  return localPoints.map((point) => {
+    const [latitude, longitude] = fromLocal(rect, point);
+    return {
       ...DEFAULT_WAYPOINT,
-      latitude: rLat1,
-      longitude: rLng1,
-      height: altitude,
-      gimbalPitchAngle: -90,
+      latitude,
+      longitude,
+      height: params.altitude,
+      gimbalPitchAngle: params.gimbalPitchAngle,
       useGlobalHeadingParam: false,
       headingMode: "followWayline",
       turnMode: "toPointAndStopWithContinuityCurvature",
       useGlobalTurnParam: false,
-      actions: addPhotos ? [{ ...takePhotoAction, actionId: 0 }] : [],
-    });
-    waypoints.push({
-      ...DEFAULT_WAYPOINT,
-      latitude: rLat2,
-      longitude: rLng2,
-      height: altitude,
+      actions: params.addPhotos ? [createTakePhotoAction()] : [],
+    };
+  });
+}
+
+export function generateGrid(params: GridParams): TemplateResult {
+  const spacing = calculateSurveySpacing(params, params.altitude);
+
+  return {
+    waypoints: generateSurveyPattern({
+      corner1: params.corner1,
+      corner2: params.corner2,
+      altitude: params.altitude,
+      lineSpacingM: spacing.lineSpacingM,
+      photoSpacingM: spacing.photoSpacingM,
+      addPhotos: params.addPhotos,
+      rotationDeg: params.rotationDeg,
+      reverse: params.reverse,
       gimbalPitchAngle: -90,
-      useGlobalHeadingParam: false,
-      headingMode: "followWayline",
-      turnMode: "toPointAndStopWithContinuityCurvature",
-      useGlobalTurnParam: false,
-      actions: addPhotos ? [{ ...takePhotoAction, actionId: 0 }] : [],
-    });
+    }),
+    pois: [],
+  };
+}
+
+function getPhotogrammetryLayers(params: PhotogrammetryParams): {
+  altitude: number;
+  rotationDeg: number;
+  gimbalPitchAngle: number;
+}[] {
+  const layerPreset =
+    params.overlapPreset === "custom" ? "default" : params.overlapPreset;
+
+  if (layerPreset === "fastest") {
+    return [
+      {
+        altitude: params.baseAltitude,
+        rotationDeg: params.rotationDeg,
+        gimbalPitchAngle: -90,
+      },
+    ];
   }
 
-  if (reverse) {
-    waypoints.reverse();
+  if (layerPreset === "highQuality") {
+    return [
+      {
+        altitude: params.baseAltitude,
+        rotationDeg: params.rotationDeg,
+        gimbalPitchAngle: -90,
+      },
+      {
+        altitude: Math.round(params.baseAltitude * 0.85),
+        rotationDeg: params.rotationDeg + 90,
+        gimbalPitchAngle: -90,
+      },
+      {
+        altitude: Math.round(params.baseAltitude * 0.75),
+        rotationDeg: params.rotationDeg + 45,
+        gimbalPitchAngle: -65,
+      },
+      {
+        altitude: Math.round(params.baseAltitude * 0.75),
+        rotationDeg: params.rotationDeg - 45,
+        gimbalPitchAngle: -65,
+      },
+    ];
   }
+
+  return [
+    {
+      altitude: params.baseAltitude,
+      rotationDeg: params.rotationDeg,
+      gimbalPitchAngle: -90,
+    },
+    {
+      altitude: Math.round(params.baseAltitude * 0.75),
+      rotationDeg: params.rotationDeg + 90,
+      gimbalPitchAngle: -65,
+    },
+  ];
+}
+
+export function generatePhotogrammetry(
+  params: PhotogrammetryParams,
+): TemplateResult {
+  const waypoints = getPhotogrammetryLayers(params).flatMap((layer) => {
+    const spacing = calculateSurveySpacing(params, layer.altitude);
+    return generateSurveyPattern({
+      corner1: params.corner1,
+      corner2: params.corner2,
+      altitude: layer.altitude,
+      lineSpacingM: spacing.lineSpacingM,
+      photoSpacingM: spacing.photoSpacingM,
+      addPhotos: params.addPhotos,
+      rotationDeg: layer.rotationDeg,
+      reverse: params.reverse,
+      gimbalPitchAngle: layer.gimbalPitchAngle,
+    });
+  });
 
   return { waypoints, pois: [] };
 }
@@ -405,15 +871,7 @@ export function generateFacade(params: FacadeParams): TemplateResult {
         gimbalPitchAngle: gimbalPitch,
         turnMode: "toPointAndStopWithContinuityCurvature",
         useGlobalTurnParam: false,
-        actions: addPhotos
-          ? [
-              {
-                actionId: 0,
-                actionType: "takePhoto",
-                params: { payloadPositionIndex: 0 },
-              },
-            ]
-          : [],
+        actions: addPhotos ? [createTakePhotoAction()] : [],
       });
     }
   }

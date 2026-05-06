@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { X, BookOpen } from "lucide-react";
+import { X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 const STORAGE_KEY = "droneroute_welcome_dismissed";
@@ -89,6 +89,12 @@ export function WelcomeDialog() {
                   G
                 </kbd>
                 Grid survey
+              </span>
+              <span className="flex items-center gap-2">
+                <kbd className="px-1.5 py-0.5 text-[10px] font-mono bg-muted rounded border border-border">
+                  M
+                </kbd>
+                Photogrammetry
               </span>
               <span className="flex items-center gap-2">
                 <kbd className="px-1.5 py-0.5 text-[10px] font-mono bg-muted rounded border border-border">

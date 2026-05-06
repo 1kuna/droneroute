@@ -5,6 +5,7 @@ import {
   Crosshair,
   Orbit,
   Grid3X3,
+  Camera,
   Building2,
   PenLine,
   ChevronDown,
@@ -42,6 +43,14 @@ const TEMPLATE_OPTIONS: {
     icon: Grid3X3,
     description: "Lawn-mower scan area",
     key: "G",
+  },
+  {
+    type: "photogrammetry",
+    label: "Photogrammetry",
+    shortLabel: "Photo",
+    icon: Camera,
+    description: "Multi-layer mapping grid",
+    key: "M",
   },
   {
     type: "facade",
@@ -157,6 +166,8 @@ export function MapToolbar() {
               <Orbit className="h-4 w-4" />
             ) : templateMode === "grid" ? (
               <Grid3X3 className="h-4 w-4" />
+            ) : templateMode === "photogrammetry" ? (
+              <Camera className="h-4 w-4" />
             ) : templateMode === "facade" ? (
               <Building2 className="h-4 w-4" />
             ) : templateMode === "pencil" ? (

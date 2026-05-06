@@ -319,6 +319,13 @@ export default function App() {
           e.preventDefault();
           setTemplateMode(templateMode === "grid" ? null : "grid");
           break;
+        case "m":
+          if (e.metaKey || e.ctrlKey) return;
+          e.preventDefault();
+          setTemplateMode(
+            templateMode === "photogrammetry" ? null : "photogrammetry",
+          );
+          break;
         case "f":
           if (e.metaKey || e.ctrlKey) return;
           e.preventDefault();
