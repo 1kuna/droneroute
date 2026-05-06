@@ -12,6 +12,7 @@ import { calculateIdealGimbalPitch, getObstacleWarnings } from "@/lib/geo";
 import { WaypointMarker } from "./WaypointMarker";
 import { PoiMarker } from "./PoiMarker";
 import { MapToolbar } from "./MapToolbar";
+import { MapSearch } from "./MapSearch";
 import { TemplateDrawHandler } from "./TemplateDrawHandler";
 import { PencilDrawHandler } from "./PencilDrawHandler";
 import { ObstacleDrawHandler } from "./ObstacleDrawHandler";
@@ -241,6 +242,7 @@ export function MapView() {
         </LayersControl>
         <MapClickHandler />
         <ExposeMapInstance />
+        <MapSearch />
         <FitBoundsOnLoad />
         <FlightPath />
         <PoiPointingLines />
