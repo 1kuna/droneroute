@@ -1,0 +1,33 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "DroneRoute",
+  "version": "0.5.0",
+  "identifier": "com.1kuna.droneroute",
+  "build": {
+    "beforeDevCommand": "npm run dev -w @droneroute/frontend",
+    "devUrl": "http://localhost:5173",
+    "frontendDist": "../../frontend/dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "DroneRoute",
+        "width": 1440,
+        "height": 960,
+        "minWidth": 1100,
+        "minHeight": 720
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self' data: blob:; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.tile.openstreetmap.org https://server.arcgisonline.com https://*.arcgisonline.com; connect-src 'self' http://127.0.0.1:* https://*.tile.openstreetmap.org https://server.arcgisonline.com https://*.arcgisonline.com"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "externalBin": ["binaries/node"],
+    "resources": ["resources/backend"],
+    "shortDescription": "DJI waypoint mission planner",
+    "longDescription": "A local desktop build of DroneRoute for planning DJI waypoint missions and exporting KMZ files."
+  }
+}

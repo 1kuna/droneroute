@@ -13,5 +13,6 @@ Everything DroneRoute can do, explained in plain language.
 - [Saving and sharing](saving-and-sharing.md) — save missions to your account and share them with others
 - [Import and export](import-export.md) — bring in existing missions or export for DJI drones
 - [Upload to controller](upload-to-controller.md) — send missions directly to a connected DJI controller
+- [Desktop app](desktop-app.md) — run DroneRoute as a local one-click app
 - [Accounts](accounts.md) — sign up, log in, and manage your account
 - [Keyboard shortcuts](keyboard-shortcuts.md) — quick reference for all shortcuts
