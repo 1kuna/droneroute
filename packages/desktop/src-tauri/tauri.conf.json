@@ -26,7 +26,7 @@
     "active": true,
     "targets": "all",
     "externalBin": ["binaries/node"],
-    "resources": ["resources/backend"],
+    "resources": ["resources/backend", "binaries/node-libs"],
     "shortDescription": "DJI waypoint mission planner",
     "longDescription": "A local desktop build of DroneRoute for planning DJI waypoint missions and exporting KMZ files."
   }

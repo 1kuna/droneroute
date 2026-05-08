@@ -18,6 +18,8 @@ server.
 ## Good to know
 
 - End users do not need Docker or command-line startup commands.
+- The packaged app bundles the Node sidecar and its macOS runtime libraries when
+  the local Node build requires them.
 - Builds are produced per platform, so macOS, Windows, and Linux installers must
   be built on their respective target platforms or in platform-specific CI.
 - The backend runs only on `127.0.0.1` and uses a random available local port.

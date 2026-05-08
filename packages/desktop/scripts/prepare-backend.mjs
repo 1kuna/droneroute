@@ -13,6 +13,7 @@ const backendDist = path.join(repoRoot, "packages/backend/dist");
 const sharedPackageDir = path.join(repoRoot, "packages/shared");
 const sharedDist = path.join(sharedPackageDir, "dist");
 const binariesDir = path.join(tauriDir, "binaries");
+const nodeLibsDir = path.join(binariesDir, "node-libs");
 const resourcesDir = path.join(tauriDir, "resources");
 const backendResourceDir = path.join(resourcesDir, "backend");
 
@@ -33,6 +34,143 @@ function copyDirectory(source, destination) {
     dereference: true,
     filter: (src) => !src.includes(`${path.sep}.DS_Store`),
   });
+}
+
+function dynamicLibraries(binaryPath) {
+  if (process.platform !== "darwin") return [];
+
+  const output = execFileSync("otool", ["-L", binaryPath], {
+    encoding: "utf8",
+  });
+
+  return output
+    .split("\n")
+    .slice(1)
+    .map((line) => line.trim().split(/\s+/)[0])
+    .filter(Boolean);
+}
+
+function isSystemLibrary(reference) {
+  return (
+    reference.startsWith("/usr/lib/") ||
+    reference.startsWith("/System/Library/")
+  );
+}
+
+function resolveLibraryReference(reference, sourcePath) {
+  if (isSystemLibrary(reference)) return null;
+  if (path.isAbsolute(reference)) {
+    return fs.existsSync(reference) ? fs.realpathSync(reference) : null;
+  }
+
+  const name = path.basename(reference);
+  const nodePath = fs.realpathSync(process.execPath);
+  const candidates = [
+    path.join(path.dirname(sourcePath), name),
+    path.join(path.dirname(nodePath), name),
+    path.join(path.dirname(nodePath), "..", "lib", name),
+    path.join(path.dirname(nodePath), "..", "..", "lib", name),
+    path.join("/opt/homebrew/lib", name),
+    path.join("/usr/local/lib", name),
+  ];
+
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) return fs.realpathSync(candidate);
+  }
+
+  return null;
+}
+
+function runInstallNameTool(args) {
+  execFileSync("install_name_tool", args, { stdio: "pipe" });
+}
+
+function addRpath(binaryPath, rpath) {
+  try {
+    runInstallNameTool(["-add_rpath", rpath, binaryPath]);
+  } catch (err) {
+    const stderr = String(err.stderr ?? "");
+    if (!stderr.includes("would duplicate path")) throw err;
+  }
+}
+
+function adHocSign(binaryPath) {
+  if (process.platform !== "darwin") return;
+  execFileSync(
+    "codesign",
+    ["--force", "--sign", "-", "--timestamp=none", binaryPath],
+    { stdio: "pipe" },
+  );
+}
+
+function prepareMacDynamicLibraries(sidecarPath) {
+  if (process.platform !== "darwin") return;
+
+  fs.rmSync(nodeLibsDir, { recursive: true, force: true });
+  fs.mkdirSync(nodeLibsDir, { recursive: true });
+
+  const copiedBySource = new Map();
+  const originalSourceByBundlePath = new Map([
+    [sidecarPath, fs.realpathSync(process.execPath)],
+  ]);
+  const queue = [sidecarPath];
+
+  while (queue.length > 0) {
+    const current = queue.shift();
+    if (!current) continue;
+    const sourceContext = originalSourceByBundlePath.get(current) ?? current;
+
+    for (const reference of dynamicLibraries(current)) {
+      const source = resolveLibraryReference(reference, sourceContext);
+      if (!source || source === fs.realpathSync(sidecarPath)) continue;
+      if (copiedBySource.has(source)) continue;
+
+      const destination = path.join(nodeLibsDir, path.basename(source));
+      fs.copyFileSync(source, destination);
+      fs.chmodSync(destination, 0o755);
+      copiedBySource.set(source, destination);
+      originalSourceByBundlePath.set(destination, source);
+      queue.push(destination);
+    }
+  }
+
+  if (copiedBySource.size === 0) return;
+
+  const nodeLibRpath = "@executable_path/../Resources/binaries/node-libs";
+  addRpath(sidecarPath, nodeLibRpath);
+
+  const patchDependencies = (targetPath, replacementPrefix) => {
+    const sourceContext =
+      originalSourceByBundlePath.get(targetPath) ?? targetPath;
+    for (const reference of dynamicLibraries(targetPath)) {
+      const source = resolveLibraryReference(reference, sourceContext);
+      if (!source || !copiedBySource.has(source)) continue;
+      runInstallNameTool([
+        "-change",
+        reference,
+        `${replacementPrefix}/${path.basename(source)}`,
+        targetPath,
+      ]);
+    }
+  };
+
+  patchDependencies(sidecarPath, "@rpath");
+
+  for (const destination of copiedBySource.values()) {
+    runInstallNameTool([
+      "-id",
+      `@rpath/${path.basename(destination)}`,
+      destination,
+    ]);
+    patchDependencies(destination, "@loader_path");
+    adHocSign(destination);
+  }
+
+  adHocSign(sidecarPath);
+
+  console.log(
+    `Prepared Node dynamic libraries: ${path.relative(repoRoot, nodeLibsDir)}`,
+  );
 }
 
 function targetTriple() {
@@ -58,6 +196,7 @@ function prepareNodeSidecar() {
   fs.mkdirSync(binariesDir, { recursive: true });
   fs.copyFileSync(process.execPath, destination);
   fs.chmodSync(destination, 0o755);
+  prepareMacDynamicLibraries(destination);
   console.log(`Prepared Node sidecar: ${path.relative(repoRoot, destination)}`);
 }
 
