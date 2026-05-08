@@ -1,0 +1,18 @@
+[package]
+name = "droneroute-desktop"
+version = "0.5.0"
+description = "DroneRoute desktop app"
+authors = ["DroneRoute contributors"]
+edition = "2021"
+
+[[bin]]
+name = "DroneRoute"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+tauri = { version = "2", features = [] }
+tauri-plugin-shell = "2"

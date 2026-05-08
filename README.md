@@ -29,6 +29,7 @@ A free, open-source mission planner for DJI drones. Plan waypoint missions on an
 - **Animated flight path** — Dashed lines animate in flight direction, proportional to each waypoint's speed
 - **Drag-and-drop reordering** — Reorder waypoints by dragging in the sidebar
 - **Keyboard shortcuts** — `W` add waypoint, `P` add POI, `Z` pencil path, `Esc` deselect, `Delete` remove selected
+- **Desktop app** — Package DroneRoute as a one-click Tauri app with the local backend bundled as a sidecar
 - **Self-hosted** — Run it on your own machine or server with Docker
 
 ## Supported Drones
@@ -55,6 +56,26 @@ npm run dev
 ```
 
 That's it! Open `http://localhost:5173` and start planning missions.
+
+### Desktop app
+
+DroneRoute can also be packaged as a local desktop app. The Tauri build bundles
+the web UI, a Node sidecar, and a private production install of the backend, so
+end users can launch `DroneRoute.app` without running terminal commands or
+Docker.
+
+```bash
+# Build a native desktop bundle for the current platform
+npm run desktop:build
+```
+
+The macOS build outputs:
+
+- `packages/desktop/src-tauri/target/release/bundle/macos/DroneRoute.app`
+- `packages/desktop/src-tauri/target/release/bundle/dmg/DroneRoute_0.5.0_aarch64.dmg`
+
+Run the build on each target platform to produce that platform's installer. The
+backend database is stored in the operating system's application data directory.
 
 ### Docker
 
@@ -88,9 +109,10 @@ The CLI detects connected controllers (via adb or mounted SD cards), creates a n
 | Frontend       | React 19, TypeScript, Vite 6, Tailwind CSS v4, shadcn/ui, Zustand, Leaflet |
 | Backend        | Node.js, Express 5, better-sqlite3, JWT auth                               |
 | Shared         | TypeScript types package shared between frontend and backend               |
+| Desktop        | Tauri 2 with a bundled Node backend sidecar                                |
 | Infrastructure | Docker, Traefik, SQLite                                                    |
 
-The project is organized as an npm monorepo with four packages: `shared`, `backend`, `frontend`, and `cli`.
+The project is organized as an npm monorepo with five packages: `shared`, `backend`, `frontend`, `desktop`, and `cli`.
 
 ## Contributing
 

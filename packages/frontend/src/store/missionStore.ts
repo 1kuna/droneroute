@@ -8,6 +8,7 @@ import type {
 } from "@droneroute/shared";
 import { DEFAULT_MISSION_CONFIG, DEFAULT_WAYPOINT } from "@droneroute/shared";
 import type { TemplateType } from "@/lib/templates";
+import { COMPACT_WAYPOINT_RENDER_THRESHOLD } from "@/lib/mapRendering";
 
 export type SelectionMode = "replace" | "toggle" | "range";
 
@@ -114,7 +115,7 @@ interface MissionState {
   setDirty: (dirty: boolean) => void;
 }
 
-export const useMissionStore = create<MissionState>((set, get) => ({
+export const useMissionStore = create<MissionState>((set) => ({
   missionId: null,
   missionName: "New Mission",
   dirty: false,
@@ -529,14 +530,19 @@ export const useMissionStore = create<MissionState>((set, get) => ({
         }
       }
 
+      const shouldAutoSelect =
+        fullWaypoints.length <= COMPACT_WAYPOINT_RENDER_THRESHOLD;
+
       return {
         waypoints: [...state.waypoints, ...fullWaypoints],
         pois: [...state.pois, ...fullPois],
-        selectedWaypointIndices: new Set(fullWaypoints.map((wp) => wp.index)),
+        selectedWaypointIndices: shouldAutoSelect
+          ? new Set(fullWaypoints.map((wp) => wp.index))
+          : new Set<number>(),
         lastSelectedWaypointIndex:
-          fullWaypoints.length > 0
+          shouldAutoSelect && fullWaypoints.length > 0
             ? fullWaypoints[fullWaypoints.length - 1].index
-            : state.lastSelectedWaypointIndex,
+            : null,
         templateMode: null,
         dirty: true,
       };
