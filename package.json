@@ -16,6 +16,7 @@
     "desktop:dev": "npm run dev -w packages/desktop",
     "desktop:build": "npm run build -w packages/desktop",
     "test:templates": "tsx packages/frontend/src/lib/templates.test.ts",
+    "test:map-rendering": "tsx packages/frontend/src/lib/mapRendering.test.ts",
     "start": "npm run start -w packages/backend",
     "lint": "oxlint packages/",
     "lint:fix": "oxlint --fix packages/",

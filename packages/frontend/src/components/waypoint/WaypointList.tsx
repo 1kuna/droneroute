@@ -12,6 +12,10 @@ import { Badge } from "@/components/ui/badge";
 import { useMissionStore } from "@/store/missionStore";
 import type { SelectionMode } from "@/store/missionStore";
 import { WaypointEditorInline } from "./WaypointEditor";
+import { shouldUseCompactWaypointRendering } from "@/lib/mapRendering";
+
+const VIRTUAL_ROW_HEIGHT = 72;
+const VIRTUAL_OVERSCAN = 8;
 
 export function WaypointList() {
   const {
@@ -25,6 +29,9 @@ export function WaypointList() {
 
   const [expandedEditor, setExpandedEditor] = useState<number | null>(null);
   const [editingName, setEditingName] = useState<number | null>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+  const [viewport, setViewport] = useState({ height: 0, scrollTop: 0 });
+  const virtualized = shouldUseCompactWaypointRendering(waypoints.length);
 
   // When exactly one waypoint is selected (e.g. by clicking on the map), expand its editor
   useEffect(() => {
@@ -33,6 +40,35 @@ export function WaypointList() {
       setExpandedEditor(index);
     }
   }, [selectedWaypointIndices]);
+
+  useEffect(() => {
+    if (!virtualized) return;
+    const scroller = listRef.current?.parentElement;
+    if (!scroller) return;
+
+    const updateViewport = () => {
+      setViewport({
+        height: scroller.clientHeight,
+        scrollTop: scroller.scrollTop,
+      });
+    };
+
+    updateViewport();
+    scroller.addEventListener("scroll", updateViewport, { passive: true });
+    window.addEventListener("resize", updateViewport);
+    return () => {
+      scroller.removeEventListener("scroll", updateViewport);
+      window.removeEventListener("resize", updateViewport);
+    };
+  }, [virtualized, waypoints.length]);
+
+  useEffect(() => {
+    if (!virtualized || selectedWaypointIndices.size !== 1) return;
+    const scroller = listRef.current?.parentElement;
+    if (!scroller) return;
+    const [selectedIndex] = selectedWaypointIndices;
+    scroller.scrollTop = Math.max(0, selectedIndex * VIRTUAL_ROW_HEIGHT - 24);
+  }, [selectedWaypointIndices, virtualized]);
 
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
@@ -113,119 +149,172 @@ export function WaypointList() {
     selectWaypoint(wpIndex, mode);
   };
 
-  return (
-    <div className="flex flex-col gap-1 p-2">
-      {waypoints.map((wp, i) => {
-        const isSelected = selectedWaypointIndices.has(wp.index);
-        const isDragging = dragIndex === i;
-        const isDragOver = dragOverIndex === i;
-        const isEditorOpen =
-          expandedEditor === wp.index && selectedWaypointIndices.size <= 1;
-        const isRenaming = editingName === wp.index;
+  const virtualStart = virtualized
+    ? Math.max(
+        0,
+        Math.floor(viewport.scrollTop / VIRTUAL_ROW_HEIGHT) - VIRTUAL_OVERSCAN,
+      )
+    : 0;
+  const virtualEnd = virtualized
+    ? Math.min(
+        waypoints.length,
+        Math.ceil(
+          (viewport.scrollTop + Math.max(viewport.height, VIRTUAL_ROW_HEIGHT)) /
+            VIRTUAL_ROW_HEIGHT,
+        ) + VIRTUAL_OVERSCAN,
+      )
+    : waypoints.length;
+  const renderedWaypoints = virtualized
+    ? waypoints.slice(virtualStart, virtualEnd)
+    : waypoints;
 
-        return (
-          <div key={wp.index}>
-            <div
-              className={`flex items-center gap-2 rounded-md px-2 py-1.5 cursor-pointer transition-colors ${
-                isDragging
-                  ? "opacity-40"
-                  : isDragOver
-                    ? "border-t-2 border-primary"
-                    : isSelected
-                      ? "bg-primary/20 border border-primary/40"
-                      : "hover:bg-secondary border border-transparent"
-              }`}
-              onClick={(e) => handleClick(e, wp.index)}
-              draggable
-              onDragStart={(e) => handleDragStart(e, i)}
-              onDragOver={(e) => handleDragOver(e, i)}
-              onDragLeave={handleDragLeave}
-              onDrop={(e) => handleDrop(e, i)}
-              onDragEnd={handleDragEnd}
-            >
-              <span title="Drag to reorder">
-                <GripVertical className="h-3 w-3 text-muted-foreground shrink-0 cursor-grab active:cursor-grabbing" />
-              </span>
-              <Badge
-                variant={isSelected ? "default" : "secondary"}
-                className="text-[10px] px-1.5 py-0"
-              >
-                {wp.index + 1}
-              </Badge>
-              <div className="flex-1 min-w-0">
-                {isRenaming ? (
-                  <input
-                    ref={nameInputRef}
-                    className="text-xs font-medium bg-transparent border-b border-primary outline-none w-full py-0"
-                    defaultValue={wp.name}
-                    autoFocus
-                    onBlur={(e) => commitRename(wp.index, e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter")
-                        commitRename(wp.index, e.currentTarget.value);
-                      if (e.key === "Escape") setEditingName(null);
-                    }}
-                    onClick={(e) => e.stopPropagation()}
-                  />
-                ) : (
-                  <div
-                    className="text-xs font-medium truncate cursor-text hover:text-primary transition-colors"
-                    onDoubleClick={(e) => startRename(wp.index, e)}
-                    title="Double-click to rename"
-                  >
-                    {wp.name || `Waypoint ${wp.index + 1}`}
-                  </div>
-                )}
-                <div className="text-[10px] text-muted-foreground flex items-center gap-2">
-                  <span className="flex items-center gap-0.5">
-                    <ArrowUp className="h-2.5 w-2.5" />
-                    {wp.height}m
-                  </span>
-                  <span className="flex items-center gap-0.5">
-                    <Gauge className="h-2.5 w-2.5" />
-                    {wp.speed}m/s
-                  </span>
-                </div>
-              </div>
-              {wp.actions.length > 0 && (
-                <Badge variant="outline" className="text-[10px] px-1 py-0">
-                  {wp.actions.length}
-                </Badge>
-              )}
-              <Button
-                variant="ghost"
-                size="icon"
-                className={`h-5 w-5 shrink-0 ${
-                  isEditorOpen
-                    ? "text-primary hover:text-primary"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-                onClick={(e) => toggleEditor(wp.index, e)}
-                title="Edit waypoint settings"
-              >
-                <Settings className="h-3 w-3" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-5 w-5 shrink-0 text-muted-foreground hover:text-destructive"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  removeWaypoint(wp.index);
+  const denseEditorWaypoint =
+    virtualized && expandedEditor !== null
+      ? waypoints.find((wp) => wp.index === expandedEditor)
+      : null;
+
+  const renderWaypointRow = (wp: (typeof waypoints)[number], i: number) => {
+    const isSelected = selectedWaypointIndices.has(wp.index);
+    const isDragging = dragIndex === i;
+    const isDragOver = dragOverIndex === i;
+    const isEditorOpen =
+      !virtualized &&
+      expandedEditor === wp.index &&
+      selectedWaypointIndices.size <= 1;
+    const isRenaming = editingName === wp.index;
+
+    return (
+      <div key={wp.index}>
+        <div
+          className={`flex items-center gap-2 rounded-md px-2 py-1.5 cursor-pointer transition-colors ${
+            isDragging
+              ? "opacity-40"
+              : isDragOver
+                ? "border-t-2 border-primary"
+                : isSelected
+                  ? "bg-primary/20 border border-primary/40"
+                  : "hover:bg-secondary border border-transparent"
+          }`}
+          onClick={(e) => handleClick(e, wp.index)}
+          draggable
+          onDragStart={(e) => handleDragStart(e, i)}
+          onDragOver={(e) => handleDragOver(e, i)}
+          onDragLeave={handleDragLeave}
+          onDrop={(e) => handleDrop(e, i)}
+          onDragEnd={handleDragEnd}
+        >
+          <span title="Drag to reorder">
+            <GripVertical className="h-3 w-3 text-muted-foreground shrink-0 cursor-grab active:cursor-grabbing" />
+          </span>
+          <Badge
+            variant={isSelected ? "default" : "secondary"}
+            className="text-[10px] px-1.5 py-0"
+          >
+            {wp.index + 1}
+          </Badge>
+          <div className="flex-1 min-w-0">
+            {isRenaming ? (
+              <input
+                ref={nameInputRef}
+                className="text-xs font-medium bg-transparent border-b border-primary outline-none w-full py-0"
+                defaultValue={wp.name}
+                autoFocus
+                onBlur={(e) => commitRename(wp.index, e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter")
+                    commitRename(wp.index, e.currentTarget.value);
+                  if (e.key === "Escape") setEditingName(null);
                 }}
-                title="Remove waypoint"
+                onClick={(e) => e.stopPropagation()}
+              />
+            ) : (
+              <div
+                className="text-xs font-medium truncate cursor-text hover:text-primary transition-colors"
+                onDoubleClick={(e) => startRename(wp.index, e)}
+                title="Double-click to rename"
               >
-                <X className="h-3 w-3" />
-              </Button>
-            </div>
-            {isEditorOpen && (
-              <div className="ml-4 mr-1 mt-1 mb-2 border-l-2 border-blue-400/30 bg-blue-500/5 rounded-r-md">
-                <WaypointEditorInline waypointIndex={wp.index} />
+                {wp.name || `Waypoint ${wp.index + 1}`}
               </div>
             )}
+            <div className="text-[10px] text-muted-foreground flex items-center gap-2">
+              <span className="flex items-center gap-0.5">
+                <ArrowUp className="h-2.5 w-2.5" />
+                {wp.height}m
+              </span>
+              <span className="flex items-center gap-0.5">
+                <Gauge className="h-2.5 w-2.5" />
+                {wp.speed}m/s
+              </span>
+            </div>
           </div>
-        );
-      })}
+          {wp.actions.length > 0 && (
+            <Badge variant="outline" className="text-[10px] px-1 py-0">
+              {wp.actions.length}
+            </Badge>
+          )}
+          <Button
+            variant="ghost"
+            size="icon"
+            className={`h-5 w-5 shrink-0 ${
+              expandedEditor === wp.index
+                ? "text-primary hover:text-primary"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+            onClick={(e) => toggleEditor(wp.index, e)}
+            title="Edit waypoint settings"
+          >
+            <Settings className="h-3 w-3" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-5 w-5 shrink-0 text-muted-foreground hover:text-destructive"
+            onClick={(e) => {
+              e.stopPropagation();
+              removeWaypoint(wp.index);
+            }}
+            title="Remove waypoint"
+          >
+            <X className="h-3 w-3" />
+          </Button>
+        </div>
+        {isEditorOpen && (
+          <div className="ml-4 mr-1 mt-1 mb-2 border-l-2 border-blue-400/30 bg-blue-500/5 rounded-r-md">
+            <WaypointEditorInline waypointIndex={wp.index} />
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  return (
+    <div ref={listRef} className="flex flex-col gap-1 p-2">
+      {denseEditorWaypoint && (
+        <div className="sticky top-0 z-10 mb-2 border-l-2 border-blue-400/40 bg-background/95 rounded-r-md shadow-lg">
+          <WaypointEditorInline waypointIndex={denseEditorWaypoint.index} />
+        </div>
+      )}
+      {virtualized ? (
+        <div
+          className="relative"
+          style={{ height: waypoints.length * VIRTUAL_ROW_HEIGHT }}
+        >
+          {renderedWaypoints.map((wp, offset) => {
+            const absoluteIndex = virtualStart + offset;
+            return (
+              <div
+                key={wp.index}
+                className="absolute left-0 right-0"
+                style={{ top: absoluteIndex * VIRTUAL_ROW_HEIGHT }}
+              >
+                {renderWaypointRow(wp, absoluteIndex)}
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        renderedWaypoints.map((wp, i) => renderWaypointRow(wp, i))
+      )}
     </div>
   );
 }
