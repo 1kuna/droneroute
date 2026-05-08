@@ -20,6 +20,14 @@ import { ObstaclePolygon } from "./ObstaclePolygon";
 import { useEffect, useRef, useMemo } from "react";
 import "leaflet/dist/leaflet.css";
 
+function eventStartedInMapControl(event: L.LeafletMouseEvent): boolean {
+  const target = event.originalEvent.target;
+  return (
+    target instanceof Element &&
+    target.closest("[data-map-control='true']") !== null
+  );
+}
+
 function MapClickHandler() {
   const {
     isAddingWaypoint,
@@ -32,6 +40,7 @@ function MapClickHandler() {
 
   useMapEvents({
     click(e) {
+      if (eventStartedInMapControl(e)) return;
       if (templateMode || isDrawingObstacle) return; // These modes handle their own interactions
       if (isAddingWaypoint) {
         addWaypoint(e.latlng.lat, e.latlng.lng);

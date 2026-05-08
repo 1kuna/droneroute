@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+  type SyntheticEvent,
+} from "react";
 import { useMap } from "react-leaflet";
 import { Loader2, MapPin, Search, X } from "lucide-react";
 import { toast } from "sonner";
@@ -27,6 +34,10 @@ function resultSubtitle(result: GeocodeResult): string {
     : `${result.latitude.toFixed(5)}, ${result.longitude.toFixed(5)}`;
 }
 
+function stopReactPropagation(e: SyntheticEvent) {
+  e.stopPropagation();
+}
+
 export function MapSearch() {
   const map = useMap();
   const panelRef = useRef<HTMLDivElement>(null);
@@ -41,7 +52,9 @@ export function MapSearch() {
     const events = [
       "mousedown",
       "mouseup",
+      "click",
       "dblclick",
+      "contextmenu",
       "wheel",
       "keydown",
       "keyup",
@@ -78,8 +91,9 @@ export function MapSearch() {
     [map],
   );
 
-  const searchLocations = async (e?: React.FormEvent) => {
+  const searchLocations = async (e?: FormEvent) => {
     e?.preventDefault();
+    e?.stopPropagation();
     const trimmed = query.trim();
     if (trimmed.length < 2 || loading) return;
 
@@ -111,6 +125,19 @@ export function MapSearch() {
   return (
     <div
       ref={panelRef}
+      data-map-control="true"
+      onClickCapture={stopReactPropagation}
+      onContextMenuCapture={stopReactPropagation}
+      onDoubleClickCapture={stopReactPropagation}
+      onKeyDownCapture={stopReactPropagation}
+      onKeyUpCapture={stopReactPropagation}
+      onMouseDownCapture={stopReactPropagation}
+      onMouseUpCapture={stopReactPropagation}
+      onPointerDownCapture={stopReactPropagation}
+      onPointerUpCapture={stopReactPropagation}
+      onTouchEndCapture={stopReactPropagation}
+      onTouchStartCapture={stopReactPropagation}
+      onWheelCapture={stopReactPropagation}
       className="absolute top-4 left-4 z-[1000] w-[min(420px,calc(100%-180px))]"
     >
       <form
