@@ -9,3 +9,7 @@ tsconfig.tsbuildinfo
 *.tsbuildinfo
 *.kmz
 audit-*.png
+packages/desktop/src-tauri/binaries/
+packages/desktop/src-tauri/gen/
+packages/desktop/src-tauri/resources/
+packages/desktop/src-tauri/target/

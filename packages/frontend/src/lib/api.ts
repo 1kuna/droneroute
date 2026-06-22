@@ -2,9 +2,31 @@ import type { AdminUser, PaginatedResponse } from "@droneroute/shared";
 import { useMissionStore } from "@/store/missionStore";
 import { useAuthStore } from "@/store/authStore";
 
-const API_BASE = "/api";
+declare global {
+  interface Window {
+    __TAURI_INTERNALS__?: unknown;
+  }
+}
+
+let tauriApiBasePromise: Promise<string | null> | null = null;
+
+async function getApiBase(): Promise<string> {
+  const configuredBase = import.meta.env.VITE_API_BASE;
+  if (configuredBase) return configuredBase;
+
+  if (typeof window === "undefined" || !window.__TAURI_INTERNALS__) {
+    return "/api";
+  }
+
+  tauriApiBasePromise ??= import("@tauri-apps/api/core")
+    .then(({ invoke }) => invoke<string>("desktop_api_base"))
+    .catch(() => null);
+
+  return (await tauriApiBasePromise) ?? "/api";
+}
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
+  const apiBase = await getApiBase();
   const token = localStorage.getItem("droneroute_token");
   const headers: Record<string, string> = {
     ...(options?.headers as Record<string, string>),
@@ -18,7 +40,7 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
     headers["Content-Type"] = "application/json";
   }
 
-  const res = await fetch(`${API_BASE}${path}`, {
+  const res = await fetch(`${apiBase}${path}`, {
     ...options,
     headers,
   });

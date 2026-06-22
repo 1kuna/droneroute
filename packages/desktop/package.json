@@ -1,0 +1,14 @@
+{
+  "name": "@droneroute/desktop",
+  "version": "0.5.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "prepare:backend": "node scripts/prepare-backend.mjs",
+    "dev": "npm run build -w @droneroute/shared && npm run build -w @droneroute/backend && npm run prepare:backend && tauri dev",
+    "build": "npm run build -w @droneroute/shared && npm run build -w @droneroute/backend && npm run build -w @droneroute/frontend && npm run prepare:backend && tauri build"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.11.1"
+  }
+}

@@ -5,11 +5,19 @@ import {
   useMapEvents,
   useMap,
   Polyline,
+  Rectangle,
 } from "react-leaflet";
 import L from "leaflet";
 import { useMissionStore } from "@/store/missionStore";
 import { calculateIdealGimbalPitch, getObstacleWarnings } from "@/lib/geo";
+import {
+  compactSurveyWaypoints,
+  getWaypointBounds,
+  shouldRenderSelectedWaypointMarkers,
+  shouldUseCompactWaypointRendering,
+} from "@/lib/mapRendering";
 import { WaypointMarker } from "./WaypointMarker";
+import { WaypointDotLayer } from "./WaypointDotLayer";
 import { PoiMarker } from "./PoiMarker";
 import { MapToolbar } from "./MapToolbar";
 import { MapSearch } from "./MapSearch";
@@ -17,8 +25,16 @@ import { TemplateDrawHandler } from "./TemplateDrawHandler";
 import { PencilDrawHandler } from "./PencilDrawHandler";
 import { ObstacleDrawHandler } from "./ObstacleDrawHandler";
 import { ObstaclePolygon } from "./ObstaclePolygon";
-import { useEffect, useRef, useMemo } from "react";
+import { useEffect, useRef, useMemo, useState } from "react";
 import "leaflet/dist/leaflet.css";
+
+function eventStartedInMapControl(event: L.LeafletMouseEvent): boolean {
+  const target = event.originalEvent.target;
+  return (
+    target instanceof Element &&
+    target.closest("[data-map-control='true']") !== null
+  );
+}
 
 function MapClickHandler() {
   const {
@@ -32,6 +48,7 @@ function MapClickHandler() {
 
   useMapEvents({
     click(e) {
+      if (eventStartedInMapControl(e)) return;
       if (templateMode || isDrawingObstacle) return; // These modes handle their own interactions
       if (isAddingWaypoint) {
         addWaypoint(e.latlng.lat, e.latlng.lng);
@@ -93,6 +110,7 @@ function FitBoundsOnLoad() {
 function FlightPath() {
   const waypoints = useMissionStore((s) => s.waypoints);
   const obstacles = useMissionStore((s) => s.obstacles);
+  const compactPath = shouldUseCompactWaypointRendering(waypoints.length);
 
   const warnings = useMemo(
     () => getObstacleWarnings(waypoints, obstacles),
@@ -109,6 +127,24 @@ function FlightPath() {
   }, [warnings]);
 
   if (waypoints.length < 2) return null;
+
+  if (compactPath) {
+    const positions = waypoints.map(
+      (wp) => [wp.latitude, wp.longitude] as [number, number],
+    );
+
+    return (
+      <Polyline
+        positions={positions}
+        pathOptions={{
+          color: warningSegments.size > 0 ? "#ef4444" : "#3b82f6",
+          weight: 2,
+          opacity: 0.46,
+          dashArray: "10, 8",
+        }}
+      />
+    );
+  }
 
   const segments = waypoints.slice(0, -1).map((wp, i) => {
     const next = waypoints[i + 1];
@@ -147,6 +183,51 @@ function FlightPath() {
           }}
         />
       ))}
+    </>
+  );
+}
+
+function LargeWaypointOverlay() {
+  const waypoints = useMissionStore((s) => s.waypoints);
+  const selectedWaypointIndices = useMissionStore(
+    (s) => s.selectedWaypointIndices,
+  );
+  const [showDots, setShowDots] = useState(false);
+  const bounds = useMemo(() => getWaypointBounds(waypoints), [waypoints]);
+  const dotWaypoints = useMemo(
+    () => compactSurveyWaypoints(waypoints),
+    [waypoints],
+  );
+
+  if (!bounds) return null;
+
+  const selected = selectedWaypointIndices.size > 0;
+  const showDotLayer = showDots || selected;
+
+  return (
+    <>
+      <Rectangle
+        bounds={bounds}
+        pathOptions={{
+          color: selected ? "#fbbf24" : "#8b5cf6",
+          weight: selected ? 3 : 2,
+          opacity: selected ? 0.9 : 0.82,
+          fillColor: "#8b5cf6",
+          fillOpacity: showDotLayer ? 0.05 : 0.1,
+        }}
+        eventHandlers={{
+          click: (event: L.LeafletMouseEvent) => {
+            L.DomEvent.stopPropagation(event.originalEvent);
+            setShowDots((value) => !value);
+          },
+        }}
+      />
+      {showDotLayer && (
+        <WaypointDotLayer
+          waypoints={dotWaypoints}
+          selectedWaypointIndices={selectedWaypointIndices}
+        />
+      )}
     </>
   );
 }
@@ -198,6 +279,9 @@ function PoiPointingLines() {
 
 export function MapView() {
   const waypoints = useMissionStore((s) => s.waypoints);
+  const selectedWaypointIndices = useMissionStore(
+    (s) => s.selectedWaypointIndices,
+  );
   const pois = useMissionStore((s) => s.pois);
   const obstacles = useMissionStore((s) => s.obstacles);
   const isAddingWaypoint = useMissionStore((s) => s.isAddingWaypoint);
@@ -217,6 +301,16 @@ export function MapView() {
             : isAddingPoi
               ? "map-tool-poi"
               : "";
+  const compactWaypoints = shouldUseCompactWaypointRendering(waypoints.length);
+  const markerWaypoints = useMemo(() => {
+    if (!compactWaypoints) return waypoints;
+    if (!shouldRenderSelectedWaypointMarkers(selectedWaypointIndices.size)) {
+      return [];
+    }
+    return waypoints.filter((waypoint) =>
+      selectedWaypointIndices.has(waypoint.index),
+    );
+  }, [compactWaypoints, selectedWaypointIndices, waypoints]);
 
   return (
     <div className={`relative h-full w-full ${cursorClass}`}>
@@ -246,13 +340,14 @@ export function MapView() {
         <FitBoundsOnLoad />
         <FlightPath />
         <PoiPointingLines />
+        {compactWaypoints && <LargeWaypointOverlay />}
         <TemplateDrawHandler />
         <PencilDrawHandler />
         <ObstacleDrawHandler />
         {obstacles.map((obstacle) => (
           <ObstaclePolygon key={obstacle.id} obstacle={obstacle} />
         ))}
-        {waypoints.map((wp) => (
+        {markerWaypoints.map((wp) => (
           <WaypointMarker key={wp.index} waypoint={wp} />
         ))}
         {pois.map((poi) => (

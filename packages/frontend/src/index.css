@@ -41,6 +41,10 @@ body {
   z-index: 2 !important;
 }
 
+.leaflet-waypoint-dot-layer {
+  z-index: 450;
+}
+
 /* Animated flight path dashes flowing in waypoint order */
 @keyframes dash-flow {
   to {

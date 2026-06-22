@@ -1,5 +1,13 @@
-import { CircleMarker, Polyline } from "react-leaflet";
+import { useMemo } from "react";
+import { CircleMarker, Polyline, Rectangle } from "react-leaflet";
+import type { Waypoint } from "@droneroute/shared";
 import type { TemplateResult } from "@/lib/templates";
+import {
+  compactSurveyWaypoints,
+  getWaypointBounds,
+  shouldUseCompactWaypointRendering,
+} from "@/lib/mapRendering";
+import { WaypointDotLayer } from "./WaypointDotLayer";
 
 interface TemplatePreviewProps {
   result: TemplateResult;
@@ -7,6 +15,17 @@ interface TemplatePreviewProps {
 
 export function TemplatePreview({ result }: TemplatePreviewProps) {
   const { waypoints, pois } = result;
+  const indexedWaypoints = useMemo<Waypoint[]>(
+    () =>
+      waypoints.map((waypoint, index) => ({
+        ...waypoint,
+        index,
+        name: `Preview waypoint ${index + 1}`,
+      })),
+    [waypoints],
+  );
+  const compactPreview = shouldUseCompactWaypointRendering(waypoints.length);
+  const bounds = compactPreview ? getWaypointBounds(indexedWaypoints) : null;
 
   // Build polyline from waypoint positions
   const positions: [number, number][] = waypoints.map((wp) => [
@@ -16,33 +35,52 @@ export function TemplatePreview({ result }: TemplatePreviewProps) {
 
   return (
     <>
+      {bounds && (
+        <Rectangle
+          bounds={bounds}
+          pathOptions={{
+            color: "#8b5cf6",
+            weight: 2,
+            opacity: 0.82,
+            fillColor: "#8b5cf6",
+            fillOpacity: 0.08,
+          }}
+        />
+      )}
+
       {/* Flight path preview */}
       {positions.length >= 2 && (
         <Polyline
           positions={positions}
           pathOptions={{
             color: "#a78bfa",
-            weight: 2,
-            opacity: 0.7,
+            weight: compactPreview ? 1.5 : 2,
+            opacity: compactPreview ? 0.45 : 0.7,
             dashArray: "6, 4",
           }}
         />
       )}
 
       {/* Waypoint markers */}
-      {waypoints.map((wp, i) => (
-        <CircleMarker
-          key={`preview-wp-${i}`}
-          center={[wp.latitude, wp.longitude]}
-          radius={5}
-          pathOptions={{
-            color: "#a78bfa",
-            fillColor: "#c4b5fd",
-            fillOpacity: 0.8,
-            weight: 2,
-          }}
+      {compactPreview ? (
+        <WaypointDotLayer
+          waypoints={compactSurveyWaypoints(indexedWaypoints)}
         />
-      ))}
+      ) : (
+        waypoints.map((wp, i) => (
+          <CircleMarker
+            key={`preview-wp-${i}`}
+            center={[wp.latitude, wp.longitude]}
+            radius={5}
+            pathOptions={{
+              color: "#a78bfa",
+              fillColor: "#c4b5fd",
+              fillOpacity: 0.8,
+              weight: 2,
+            }}
+          />
+        ))
+      )}
 
       {/* POI markers */}
       {pois.map((poi, i) => (

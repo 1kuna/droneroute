@@ -1,7 +1,11 @@
-import { useRef, useState, useCallback, useEffect } from "react";
+import { useRef, useState, useCallback, useEffect, useMemo } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { useMissionStore } from "@/store/missionStore";
 import type { SelectionMode } from "@/store/missionStore";
+import {
+  shouldRenderSelectedWaypointMarkers,
+  shouldUseCompactWaypointRendering,
+} from "@/lib/mapRendering";
 
 const GRAPH_HEIGHT = 100;
 const PAD_TOP = 14;
@@ -60,8 +64,9 @@ export function ElevationGraph() {
 
   // SVG width: ensure minimum spacing between waypoints
   const effectiveWidth = containerWidth || 320;
+  const compactGraph = shouldUseCompactWaypointRendering(waypoints.length);
   const neededWidth =
-    waypoints.length <= 1
+    compactGraph || waypoints.length <= 1
       ? effectiveWidth
       : PAD_LEFT + PAD_RIGHT + (waypoints.length - 1) * MIN_SPACING;
   const svgWidth = Math.max(effectiveWidth, neededWidth);
@@ -170,6 +175,35 @@ export function ElevationGraph() {
     didDrag.current = false;
   }, []);
 
+  const compactSamples = useMemo(() => {
+    if (!compactGraph) return [];
+    const maxSamples = 280;
+    if (waypoints.length <= maxSamples) {
+      return waypoints.map((wp, i) => ({ waypoint: wp, index: i }));
+    }
+
+    const samples: { waypoint: (typeof waypoints)[number]; index: number }[] =
+      [];
+    const step = (waypoints.length - 1) / (maxSamples - 1);
+    for (let i = 0; i < maxSamples; i++) {
+      const index = Math.min(waypoints.length - 1, Math.round(i * step));
+      samples.push({ waypoint: waypoints[index], index });
+    }
+    return samples;
+  }, [compactGraph, waypoints]);
+
+  const compactSelectedWaypoints = useMemo(() => {
+    if (
+      !compactGraph ||
+      !shouldRenderSelectedWaypointMarkers(selectedIndices.size)
+    ) {
+      return [];
+    }
+    return waypoints
+      .map((waypoint, index) => ({ waypoint, index }))
+      .filter(({ waypoint }) => selectedIndices.has(waypoint.index));
+  }, [compactGraph, selectedIndices, waypoints]);
+
   if (waypoints.length === 0) {
     return (
       <div
@@ -241,7 +275,62 @@ export function ElevationGraph() {
       </button>
 
       {/* Collapsible body */}
-      {expanded && (
+      {expanded && compactGraph ? (
+        <div className="px-3 pb-2">
+          <svg width="100%" height={GRAPH_HEIGHT} className="select-none">
+            {(() => {
+              const lines = [];
+              const hCount = 4;
+              for (let i = 0; i <= hCount; i++) {
+                const y = (i / hCount) * GRAPH_HEIGHT;
+                lines.push(
+                  <line
+                    key={`compact-h-${i}`}
+                    x1={0}
+                    y1={y}
+                    x2="100%"
+                    y2={y}
+                    stroke="#475569"
+                    strokeWidth={0.5}
+                    opacity={0.3}
+                  />,
+                );
+              }
+              return lines;
+            })()}
+            <polyline
+              points={compactSamples
+                .map(
+                  ({ waypoint, index }) =>
+                    `${toX(index)},${toY(waypoint.height)}`,
+                )
+                .join(" ")}
+              fill="none"
+              stroke="#60a5fa"
+              strokeWidth={2}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeDasharray="4,4"
+              opacity={0.75}
+            />
+            {compactSelectedWaypoints.map(({ waypoint, index }) => {
+              const cx = toX(index);
+              const cy = toY(waypoint.height);
+              return (
+                <circle
+                  key={waypoint.index}
+                  cx={cx}
+                  cy={cy}
+                  r={4}
+                  fill="#3b82f6"
+                  stroke="#93c5fd"
+                  strokeWidth={1.5}
+                />
+              );
+            })}
+          </svg>
+        </div>
+      ) : expanded ? (
         <div
           className="overflow-x-auto"
           style={{
@@ -400,7 +489,7 @@ export function ElevationGraph() {
             })}
           </svg>
         </div>
-      )}
+      ) : null}
     </div>
   );
 }
